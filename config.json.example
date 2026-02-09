@@ -1,0 +1,12 @@
+{
+  "enabled": true,
+  "enabledPrivateMsg": true,
+  "napcat": {
+    "url": "ws://localhost:3000/ws",
+    "accessToken": ""
+  },
+  "petPhrase": "喵(=^‥^=)",
+  "enabledGroups": ["123456789"],
+  "owner": "987654321",
+  "commandPrefix": "/bilibilibot"
+}

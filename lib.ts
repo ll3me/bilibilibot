@@ -95,15 +95,25 @@ export class BilibiliMessageScanner {
         }
 
         const rawMessage = event.raw_message || "";
-        if (rawMessage.includes("哔哩哔哩")) {
-            const textMatch = rawMessage.match(/(https:\/\/b23\.tv\/[a-zA-Z0-9]+)/);
-            if (textMatch && textMatch[1]) {
-                return {
-                    url: textMatch[1],
-                    source: 'text_share',
-                    needsParamRemoval: false
-                };
-            }
+
+        // 1. 尝试从文本中提取 b23.tv 短链接
+        const b23Match = rawMessage.match(/(https?:\/\/b23\.tv\/[a-zA-Z0-9]+)/);
+        if (b23Match) {
+            return {
+                url: b23Match[1],
+                source: 'text_share',
+                needsParamRemoval: false
+            };
+        }
+
+        // 2. 尝试从文本中提取 bilibili.com 视频链接
+        const bbMatch = rawMessage.match(/(https?:\/\/(www\.)?bilibili\.com\/video\/(BV[a-zA-Z0-9]+|av[0-9]+)[^\s]*)/);
+        if (bbMatch) {
+            return {
+                url: bbMatch[1],
+                source: 'text_share',
+                needsParamRemoval: true
+            };
         }
 
         return null;
@@ -122,6 +132,14 @@ export class BvidParser {
 
     static async parse(b23Url: string): Promise<string | null> {
         try {
+            // 0. 如果已经是包含 BV 号的长链接，直接提取，跳过网络请求
+            const directMatch = b23Url.match(/\/video\/(BV[a-zA-Z0-9]+)/);
+            if (directMatch && directMatch[1]) {
+                const bvId = directMatch[1];
+                console.log(`✅ 直接从链接提取 BV 号: ${bvId}`);
+                return bvId;
+            }
+
             console.log(`BV模式: 正在解析 ${b23Url}`);
             const response = await axios.get(b23Url, {
                 headers: {

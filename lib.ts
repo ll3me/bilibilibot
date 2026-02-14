@@ -12,6 +12,7 @@ const configFile = path.join(__dirname, "config.json");
 interface Config {
     enabled: boolean;
     enabledPrivateMsg: boolean;
+    sendAsForward: boolean;
     napcat: {
         url: string;
         accessToken: string;
@@ -27,6 +28,15 @@ interface MessageSegment {
     data?: Record<string, any>;
 }
 
+interface MessageNode {
+    type: 'node';
+    data: {
+        name: string;
+        uin: string;
+        content: string | MessageSegment[];
+    };
+}
+
 interface NapcatEvent {
     post_type?: string;
     raw_message?: string;
@@ -37,17 +47,19 @@ interface NapcatEvent {
 }
 
 interface SendMessagePayload {
-    action: 'send_group_msg' | 'send_private_msg';
+    action: string;
     params: {
         group_id?: number;
         user_id?: number;
-        message: string;
+        message?: string | MessageSegment[];
+        messages?: MessageNode[];
     };
 }
 
 const DEFAULT_CONFIG: Config = {
     enabled: true,
     enabledPrivateMsg: true,
+    sendAsForward: true,
     napcat: {
         url: "ws://localhost:3000/ws",
         accessToken: "",
@@ -351,18 +363,50 @@ export class NapcatService {
 
     private static ws: WebSocket | null = null;
 
-    private static async sendMessage(isGroup: boolean, targetId: number, message: string): Promise<void> {
+    private static async send(payload: SendMessagePayload): Promise<void> {
         if (!NapcatService.ws || NapcatService.ws.readyState !== WebSocket.OPEN) return;
         const delayMs = 500 + Math.floor(Math.random() * 501);
         await new Promise(resolve => setTimeout(resolve, delayMs));
-        const payload: SendMessagePayload = {
-            action: isGroup ? "send_group_msg" : "send_private_msg",
-            params: {
-                [isGroup ? "group_id" : "user_id"]: targetId,
-                message: message
+        NapcatService.ws.send(JSON.stringify(payload));
+    }
+
+    public static async sendGroupMsg(groupId: number, message: string): Promise<void> {
+        await NapcatService.send({
+            action: "send_group_msg",
+            params: { group_id: groupId, message }
+        });
+    }
+
+    public static async sendPrivateMsg(userId: number, message: string): Promise<void> {
+        await NapcatService.send({
+            action: "send_private_msg",
+            params: { user_id: userId, message }
+        });
+    }
+
+    public static async sendGroupForwardMsg(groupId: number, nodes: MessageNode[]): Promise<void> {
+        await NapcatService.send({
+            action: "send_group_forward_msg",
+            params: { group_id: groupId, messages: nodes }
+        });
+    }
+
+    public static async sendPrivateForwardMsg(userId: number, nodes: MessageNode[]): Promise<void> {
+        await NapcatService.send({
+            action: "send_private_forward_msg",
+            params: { user_id: userId, messages: nodes }
+        });
+    }
+
+    public static createForwardNode(name: string, uin: string, content: string | MessageSegment[]): MessageNode {
+        return {
+            type: 'node',
+            data: {
+                name,
+                uin,
+                content
             }
         };
-        NapcatService.ws.send(JSON.stringify(payload));
     }
 
     static async connectToNapcat(): Promise<void> {
@@ -412,7 +456,9 @@ export class NapcatService {
 
                     const [replyMsg, shouldReply] = await CommandHandler.handleCommand(command, args, userId.toString(), isGroup);
                     if (shouldReply && replyMsg) {
-                        await NapcatService.sendMessage(isGroup, targetId as number, replyMsg);
+                        if (!isGroup) {
+                            await NapcatService.sendPrivateMsg(targetId as number, replyMsg);
+                        }
                     }
                     return;
                 }
@@ -437,7 +483,22 @@ export class NapcatService {
                                 replyText += `\n${App.config.petPhrase}`;
                             }
 
-                            await NapcatService.sendMessage(isGroup, targetId as number, replyText);
+                            if (App.config.sendAsForward) {
+                                const nodes = [
+                                    NapcatService.createForwardNode("BilibiliBot", userId.toString(), replyText)
+                                ];
+                                if (isGroup) {
+                                    await NapcatService.sendGroupForwardMsg(targetId as number, nodes);
+                                } else {
+                                    await NapcatService.sendPrivateForwardMsg(targetId as number, nodes);
+                                }
+                            } else {
+                                if (isGroup) {
+                                    await NapcatService.sendGroupMsg(targetId as number, replyText);
+                                } else {
+                                    await NapcatService.sendPrivateMsg(targetId as number, replyText);
+                                }
+                            }
                         }
                     }
                 }

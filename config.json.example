@@ -1,6 +1,7 @@
 {
   "enabled": true,
   "enabledPrivateMsg": true,
+  "sendAsForward": true,
   "napcat": {
     "url": "ws://localhost:3000/ws",
     "accessToken": ""
